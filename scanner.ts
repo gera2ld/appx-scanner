@@ -1,7 +1,7 @@
 import * as path from 'https://deno.land/std/path/mod.ts';
 import { readFileStr } from 'https://deno.land/std/fs/mod.ts';
 import { red, yellow } from 'https://deno.land/std/fmt/colors.ts';
-import { parseXml, INode, IError } from './xml.ts';
+import { parseXml, IError, traverse, reprStr } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
 
 const builtIns = [
   'block',
@@ -110,8 +110,13 @@ export class AppXScanner {
   }
 
   async readFile(entry: string) {
-    const content = await readFileStr(`${this.root}/${entry}`);
-    return content;
+    try {
+      const content = await readFileStr(`${this.root}/${entry}`);
+      return content;
+    } catch (err) {
+      console.log(err);
+      throw err;
+    }
   }
 
   async extractDefinitions(entry: string) {
@@ -136,7 +141,7 @@ export class AppXScanner {
 
   async extractComponents(entry: string) {
     const content = await this.readFile(`${entry}.axml`);
-    const [root, warnings] = parseXml(content);
+    const { node: root, warnings } = parseXml(content);
     if (warnings.length) {
       this.addError(entry, warnings);
     }
@@ -144,13 +149,18 @@ export class AppXScanner {
     traverse(root, node => {
       if (node.type === 'element' && node.name) {
         components.add(node.name);
+        if (node.attrs) {
+          for (const attr of Object.values(node.attrs)) {
+            if (typeof attr.value === 'string' && attr.value.includes('{{') !== attr.value.includes('}}')) {
+              this.addError(entry, reprStr(content, attr.position.end, 'Unmatched brackets'));
+            }
+          }
+        }
+      }
+      if (node.type === 'text' && node.value && node.value.includes('{{') !== node.value.includes('}}')) {
+        this.addError(entry, reprStr(content, (node.posOpen?.end || -1) + 1, 'Unmatched brackets'));
       }
     });
     return components;
   }
-}
-
-function traverse(node: INode, callback: (node: INode) => void): void {
-  callback(node);
-  node.children?.forEach(child => traverse(child, callback));
 }
