@@ -1,7 +1,6 @@
 import * as path from 'https://deno.land/std/path/mod.ts';
-import { readFileStr } from 'https://deno.land/std/fs/mod.ts';
 import { red, yellow } from 'https://deno.land/std/fmt/colors.ts';
-import { parseXml, IError, traverse, reprStr } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
+import { parseXml, IError, traverse, reprStr, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
 
 const builtIns = [
   'block',
@@ -89,13 +88,7 @@ export class AppXScanner {
     }
     if (!hasError) {
       const definitions = await this.extractDefinitions(entry);
-      const components = await this.extractComponents(entry);
-      for (const component of components) {
-        if (!builtIns.includes(component) && !definitions.components.includes(component)) {
-          hasError = true;
-          this.addError(entry, { message: `Undefined component: ${component}` });
-        }
-      }
+      await this.extractComponents(entry, definitions.components);
     }
   }
 
@@ -111,7 +104,7 @@ export class AppXScanner {
 
   async readFile(entry: string) {
     try {
-      const content = await readFileStr(`${this.root}/${entry}`);
+      const content = await Deno.readTextFile(`${this.root}/${entry}`);
       return content;
     } catch (err) {
       console.log(err);
@@ -139,16 +132,18 @@ export class AppXScanner {
     return { components };
   }
 
-  async extractComponents(entry: string) {
+  async extractComponents(entry: string, definitions: string[]) {
     const content = await this.readFile(`${entry}.axml`);
     const { node: root, warnings } = parseXml(content);
     if (warnings.length) {
       this.addError(entry, warnings);
     }
-    const components = new Set<string>();
+    const components = new Map<string, INode>();
     traverse(root, node => {
       if (node.type === 'element' && node.name) {
-        components.add(node.name);
+        if (!components.has(node.name)) {
+          components.set(node.name, node);
+        }
         if (node.attrs) {
           for (const attr of Object.values(node.attrs)) {
             if (typeof attr.value === 'string' && attr.value.includes('{{') !== attr.value.includes('}}')) {
@@ -161,6 +156,11 @@ export class AppXScanner {
         this.addError(entry, reprStr(content, (node.posOpen?.end || -1) + 1, 'Unmatched brackets'));
       }
     });
+    for (const [name, node] of components) {
+      if (!builtIns.includes(name) && !definitions.includes(name)) {
+        this.addError(entry, reprStr(content, (node.posOpen?.start || -1) + 1, `Undefined component: ${name}`));
+      }
+    }
     return components;
   }
 }
