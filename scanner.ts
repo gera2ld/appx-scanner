@@ -19,50 +19,76 @@ const builtIns = [
   'web-view',
 ];
 
+interface IDependency {
+  node: INode;
+  modulePath?: string;
+}
+
+interface IComponent {
+  entry: string;
+  deps: IDependency[];
+  defs?: {
+    components: Map<string, string>;
+  };
+}
+
 export class AppXScanner {
   root: string;
-  pages: string[];
-  components: string[];
+  components: Map<string, IComponent>;
   errors: { [key: string]: IError[] };
 
   constructor(entry: string) {
     this.root = entry;
-    this.pages = [];
-    this.components = [];
+    this.components = new Map();
     this.errors = {};
+  }
+
+  logError(entry: string, errors: IError[]) {
+    console.info(`- ${red(entry)}`);
+    for (const error of errors) {
+      const title = [
+        error.line && yellow(`@${error.line}:${error.col}`),
+        error.message,
+      ].filter(Boolean).join(' ');
+      if (title) console.info(`  ${title}`);
+      const content = error.content?.split('\n').map(line => `  ${line}`).join('\n');
+      if (content) console.info(`\n${content}\n`);
+    }
   }
 
   async check() {
     this.errors = {};
     await this.checkApp();
-    await this.checkPages();
     let hasError = false;
     console.info();
-    for (const [entry, list] of Object.entries(this.errors)) {
+    for (const [entry, errors] of Object.entries(this.errors)) {
       hasError = true;
-      console.info(`- ${red(entry)}`);
-      for (const error of list) {
-        const title = [
-          error.line && yellow(`@${error.line}:${error.col}`),
-          error.message,
-        ].filter(Boolean).join(' ');
-        if (title) console.info(`  ${title}`);
-        const content = (error.content || '').split('\n').map(line => `  ${line}`).join('\n');
-        if (content) console.info(`\n${content}\n`);
-      }
+      this.logError(entry, errors);
     }
     if (!hasError) console.info('No error is found');
+    await this.analyze();
   }
 
   async checkApp() {
     const app = JSON.parse(await this.readFile('app.json'));
-    this.pages = app.pages as string[];
+    const pages = app.pages as string[];
+    for (const page of pages) {
+      await this.checkComponent(page);
+    }
   }
 
-  async checkPages() {
-    for (const page of this.pages) {
-      await this.checkPage(page);
+  async analyze() {
+    const nodes = new Set<string>();
+    const links = [];
+    for (const [, component] of this.components) {
+      nodes.add(component.entry);
+      for (const dep of component.deps) {
+        if (dep.modulePath) {
+          links.push([component.entry, dep.modulePath]);
+        }
+      }
     }
+    // console.log(nodes, links);
   }
 
   addError(entry: string, error: IError | IError[]) {
@@ -75,7 +101,7 @@ export class AppXScanner {
     else list.push(error);
   }
 
-  async checkPage(entry: string) {
+  async checkComponent(entry: string) {
     let hasError = false;
     try {
       await this.assertFile(`${entry}.json`);
@@ -87,8 +113,21 @@ export class AppXScanner {
       hasError = true;
     }
     if (!hasError) {
-      const definitions = await this.extractDefinitions(entry);
-      await this.extractComponents(entry, definitions.components);
+      const defs = await this.extractDefinitions(entry);
+      let deps;
+      try {
+        deps = await this.extractComponents(entry, defs.components);
+      } catch (err) {
+        this.addError(entry, err.error);
+      }
+      this.components.set(entry, {
+        entry,
+        deps: deps || [],
+        defs,
+      });
+      for (const [, modulePath] of defs.components) {
+        if (!this.components.has(modulePath)) await this.checkComponent(modulePath);
+      }
     }
   }
 
@@ -114,17 +153,19 @@ export class AppXScanner {
 
   async extractDefinitions(entry: string) {
     const def = JSON.parse(await this.readFile(`${entry}.json`));
-    const components = Object.keys(def.usingComponents || {});
-    for (const key of components) {
-      let value = def.usingComponents[key];
+    const components = new Map<string, string>();
+    for (const [key, value] of Object.entries<string>(def.usingComponents || {})) {
       try {
+        let modulePath;
         if (value.startsWith('/')) {
-          await this.assertFile(value.slice(1) + '.json');
+          modulePath = value.slice(1);
         } else if (value.startsWith('.')) {
-          await this.assertFile(path.join(path.dirname(entry), value) + '.json');
+          modulePath = path.join(path.dirname(entry), value);
         } else {
-          await this.assertFile(`node_modules/${value}.json`);
+          modulePath = `@/${value}`;
         }
+        await this.assertFile(`${modulePath}.json`);
+        components.set(key, modulePath);
       } catch {
         this.addError(entry, { message: `Component not found: ${key}` });
       }
@@ -132,17 +173,18 @@ export class AppXScanner {
     return { components };
   }
 
-  async extractComponents(entry: string, definitions: string[]) {
+  async extractComponents(entry: string, definitions: Map<string, string>) {
     const content = await this.readFile(`${entry}.axml`);
-    const { node: root, warnings } = parseXml(content);
+    const result = parseXml(content);
+    const { node: root, warnings } = result;
     if (warnings.length) {
       this.addError(entry, warnings);
     }
-    const components = new Map<string, INode>();
+    const deps = new Map<string, IDependency>();
     traverse(root, node => {
       if (node.type === 'element' && node.name) {
-        if (!components.has(node.name)) {
-          components.set(node.name, node);
+        if (!deps.has(node.name)) {
+          deps.set(node.name, { node });
         }
         if (node.attrs) {
           for (const attr of Object.values(node.attrs)) {
@@ -156,11 +198,15 @@ export class AppXScanner {
         this.addError(entry, reprStr(content, (node.posOpen?.end || -1) + 1, 'Unmatched brackets'));
       }
     });
-    for (const [name, node] of components) {
-      if (!builtIns.includes(name) && !definitions.includes(name)) {
-        this.addError(entry, reprStr(content, (node.posOpen?.start || -1) + 1, `Undefined component: ${name}`));
+    for (const [name, component] of deps) {
+      if (builtIns.includes(name)) {
+        component.modulePath = `@@/${name}`;
+      } else if (definitions.has(name)) {
+        component.modulePath = definitions.get(name);
+      } else {
+        this.addError(entry, reprStr(content, (component.node.posOpen?.start ?? -1) + 1, `Undefined component: ${name}`));
       }
     }
-    return components;
+    return Array.from(deps, ([, dep]) => dep);
   }
 }
