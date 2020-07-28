@@ -6,15 +6,38 @@ const builtIns = [
   'block',
   'button',
   'canvas',
+  'checkbox',
+  'checkbox-group',
+  'cover-image',
+  'cover-view',
+  'form',
+  'icon',
   'image',
   'import-sjs',
   'input',
+  'label',
+  'lottie',
+  'map',
+  'movable-area',
+  'movable-view',
+  'navigator',
   'picker',
+  'picker-view',
+  'picker-view-column',
+  'progress',
   'radio',
+  'radio-group',
+  'rich-text',
   'scroll-view',
+  'slider',
+  'slot',
+  'swiper',
+  'swiper-item',
+  'switch',
   'template',
   'text',
   'textarea',
+  'video',
   'view',
   'web-view',
 ];
@@ -158,8 +181,13 @@ export class AppXScanner {
   }
 
   async assertFile(entry: string) {
-    const stat = await this.stat(`${this.root}/${entry}`);
-    if (!stat.isFile) throw new Error(`Expect file: ${entry}`)
+    let stat: Deno.FileInfo | undefined;
+    try {
+      stat = await this.stat(`${this.root}/${entry}`);
+    } catch {
+      // noop
+    }
+    if (!stat?.isFile) throw new Error(`Expect file: ${entry}`)
   }
 
   async readFile(entry: string) {
@@ -183,7 +211,7 @@ export class AppXScanner {
         } else if (value.startsWith('.')) {
           modulePath = path.join(path.dirname(entry), value);
         } else {
-          modulePath = `@/${value}`;
+          modulePath = `node_modules/${value}`;
         }
         await this.assertFile(`${modulePath}.json`);
         components.set(key, modulePath);
