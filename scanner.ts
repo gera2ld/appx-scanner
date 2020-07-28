@@ -32,6 +32,12 @@ interface IComponent {
   };
 }
 
+interface IGraphNode {
+  entry: string;
+  name: string;
+  weight: number;
+}
+
 export class AppXScanner {
   root: string;
   components: Map<string, IComponent>;
@@ -78,17 +84,32 @@ export class AppXScanner {
   }
 
   async analyze() {
-    const nodes = new Set<string>();
+    const nodeMap = new Map<string, IGraphNode>();
     const links = [];
     for (const [, component] of this.components) {
-      nodes.add(component.entry);
+      const parts = component.entry.split('/');
+      let name = parts.pop();
+      if (name === 'index') name = parts.pop();
+      nodeMap.set(component.entry, {
+        name: name || '',
+        entry: component.entry,
+        weight: 0,
+      });
       for (const dep of component.deps) {
         if (dep.modulePath) {
           links.push([component.entry, dep.modulePath]);
         }
       }
     }
-    // console.log(nodes, links);
+    for (const entries of links) {
+      for (const entry of entries) {
+        const node = nodeMap.get(entry);
+        if (node) node.weight += 1;
+      }
+    }
+    // const nodes = Array.from(nodeMap.values());
+    // const template = await Deno.readTextFile('template.html');
+    // await Deno.writeTextFile('appx-result.html', template.replace('{/* DATA */}', JSON.stringify({ nodes, links })));
   }
 
   addError(entry: string, error: IError | IError[]) {
@@ -207,6 +228,6 @@ export class AppXScanner {
         this.addError(entry, reprStr(content, (component.node.posOpen?.start ?? -1) + 1, `Undefined component: ${name}`));
       }
     }
-    return Array.from(deps, ([, dep]) => dep);
+    return Array.from(deps.values());
   }
 }
