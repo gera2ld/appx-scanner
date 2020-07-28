@@ -1,6 +1,6 @@
 import * as path from 'https://deno.land/std/path/mod.ts';
 import { red, yellow } from 'https://deno.land/std/fmt/colors.ts';
-import { parseXml, IError, traverse, reprStr, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
+import { parseXml, IError, traverse, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
 
 const builtIns = [
   'block',
@@ -61,10 +61,46 @@ interface IGraphNode {
   weight: number;
 }
 
+interface IErrorRef {
+  line?: number;
+  col?: number;
+  message?: string;
+  content?: string[];
+}
+
+export function reprStr(error: IError): IErrorRef {
+  const { input, offset, message } = error;
+  const lines = input.split('\n');
+  let line = 0;
+  let col = offset;
+  while (line < lines.length && col > lines[line].length) {
+    col -= lines[line].length + 1;
+    line += 1;
+  }
+  const start = Math.max(0, col - 100);
+  const end = Math.min(col + 100, lines[line].length);
+  const currentLine = lines[line];
+  const codeLine = (start > 0 ? '...' : '') + currentLine.slice(start, end).replace(/^\t+/, (m: string) => '  '.repeat(m.length));
+  let cursor = start > 0 ? 3 : 0;
+  for (let i = start; i < col; i += 1) {
+    if (currentLine.charCodeAt(i) > 127 || currentLine[i] === '\t') cursor += 2;
+    else cursor += 1;
+  }
+  return {
+    line: line + 1,
+    col: col + 1,
+    message,
+    content: [
+      codeLine,
+      ' '.repeat(cursor) + '^',
+    ],
+  };
+}
+
 export class AppXScanner {
   root: string;
   components: Map<string, IComponent>;
-  errors: { [key: string]: IError[] };
+  errors: { [key: string]: IErrorRef[] };
 
   constructor(entry: string) {
     this.root = entry;
@@ -72,7 +108,7 @@ export class AppXScanner {
     this.errors = {};
   }
 
-  logError(entry: string, errors: IError[]) {
+  logError(entry: string, errors: IErrorRef[]) {
     console.info(`- ${red(entry)}`);
     for (const error of errors) {
       const title = [
@@ -80,7 +116,7 @@ export class AppXScanner {
         error.message,
       ].filter(Boolean).join(' ');
       if (title) console.info(`  ${title}`);
-      const content = error.content?.split('\n').map(line => `  ${line}`).join('\n');
+      const content = error.content?.map(line => `  ${line}`).join('\n');
       if (content) console.info(`\n${content}\n`);
     }
   }
@@ -135,7 +171,7 @@ export class AppXScanner {
     // await Deno.writeTextFile('appx-result.html', template.replace('{/* DATA */}', JSON.stringify({ nodes, links })));
   }
 
-  addError(entry: string, error: IError | IError[]) {
+  addError(entry: string, error: IErrorRef | IErrorRef[]) {
     let list = this.errors[entry];
     if (!list) {
       list = [];
@@ -227,7 +263,7 @@ export class AppXScanner {
     const result = parseXml(content);
     const { node: root, warnings } = result;
     if (warnings.length) {
-      this.addError(entry, warnings);
+      this.addError(entry, warnings.map(reprStr));
     }
     const deps = new Map<string, IDependency>();
     traverse(root, node => {
@@ -238,13 +274,13 @@ export class AppXScanner {
         if (node.attrs) {
           for (const attr of Object.values(node.attrs)) {
             if (typeof attr.value === 'string' && attr.value.includes('{{') !== attr.value.includes('}}')) {
-              this.addError(entry, reprStr(content, attr.position.end, 'Unmatched brackets'));
+              this.addError(entry, reprStr({ input: content, offset: attr.position.end, message: 'Unmatched brackets' }));
             }
           }
         }
       }
       if (node.type === 'text' && node.value && node.value.includes('{{') !== node.value.includes('}}')) {
-        this.addError(entry, reprStr(content, (node.posOpen?.end || -1) + 1, 'Unmatched brackets'));
+        this.addError(entry, reprStr({ input: content, offset: (node.posOpen?.end || -1) + 1, message: 'Unmatched brackets' }));
       }
     });
     for (const [name, component] of deps) {
@@ -253,7 +289,7 @@ export class AppXScanner {
       } else if (definitions.has(name)) {
         component.modulePath = definitions.get(name);
       } else {
-        this.addError(entry, reprStr(content, (component.node.posOpen?.start ?? -1) + 1, `Undefined component: ${name}`));
+        this.addError(entry, reprStr({ input: content, offset: (component.node.posOpen?.start ?? -1) + 1, message: `Undefined component: ${name}` }));
       }
     }
     return Array.from(deps.values());
