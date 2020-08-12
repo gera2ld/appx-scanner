@@ -1,3 +1,4 @@
+import { walk } from 'https://deno.land/std/fs/mod.ts';
 import * as path from 'https://deno.land/std/path/mod.ts';
 import { red, yellow } from 'https://deno.land/std/fmt/colors.ts';
 import { parseXml, IError, traverse, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
@@ -131,6 +132,7 @@ export class AppXScanner {
       this.logError(entry, errors);
     }
     if (!hasError) console.info('No error is found');
+    await this.checkUnused();
     await this.analyze();
   }
 
@@ -139,6 +141,25 @@ export class AppXScanner {
     const pages = app.pages as string[];
     for (const page of pages) {
       await this.checkComponent(page);
+    }
+  }
+
+  async checkUnused() {
+    const unused = new Set();
+    for await (const entry of walk(this.root, { skip: [/\/node_modules\//] })) {
+      const filepath = path.posix.relative(this.root, entry.path);
+      if (filepath.endsWith('.axml')) {
+        const componentEntry = filepath.slice(0, -5);
+        if (!this.components.has(componentEntry)) {
+          unused.add(componentEntry);
+        }
+      }
+    }
+    if (unused.size > 0) {
+      console.info(red(`${unused.size} unused components are found:`));
+      for (const entry of unused) {
+        console.info(`  - ${entry}`);
+      }
     }
   }
 
