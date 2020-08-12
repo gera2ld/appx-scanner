@@ -156,7 +156,7 @@ export class AppXScanner {
       }
     }
     if (unused.size > 0) {
-      console.info(red(`${unused.size} unused components are found:`));
+      console.info(red(`${unused.size} extraneous components are found:`));
       for (const entry of unused) {
         console.info(`  - ${entry}`);
       }
@@ -304,14 +304,19 @@ export class AppXScanner {
         this.addError(entry, reprStr({ input: content, offset: (node.posOpen?.end || -1) + 1, message: 'Unmatched brackets' }));
       }
     });
+    const unused = new Map(definitions);
     for (const [name, component] of deps) {
       if (builtIns.includes(name)) {
         component.modulePath = `@@/${name}`;
       } else if (definitions.has(name)) {
         component.modulePath = definitions.get(name);
+        unused.delete(name);
       } else {
         this.addError(entry, reprStr({ input: content, offset: (component.node.posOpen?.start ?? -1) + 1, message: `Undefined component: ${name}` }));
       }
+    }
+    for (const [name] of unused) {
+      this.addError(entry, { message: `Unused definition: ${name}` });
     }
     return Array.from(deps.values());
   }
