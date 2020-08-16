@@ -1,6 +1,6 @@
 import { walk } from 'https://deno.land/std/fs/mod.ts';
 import * as path from 'https://deno.land/std/path/mod.ts';
-import { red, yellow } from 'https://deno.land/std/fmt/colors.ts';
+import { cyan, red, yellow } from 'https://deno.land/std/fmt/colors.ts';
 import { parseXml, IError, traverse, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
 
 const builtIns = [
@@ -101,38 +101,52 @@ export function reprStr(error: IError): IErrorRef {
 export class AppXScanner {
   root: string;
   components: Map<string, IComponent>;
-  errors: { [key: string]: IErrorRef[] };
+  errors: {
+    fatal: Map<string, IErrorRef[]>;
+    warning: Map<string, IErrorRef[]>;
+  };
 
   constructor(entry: string) {
     this.root = entry;
     this.components = new Map();
-    this.errors = {};
+    this.errors = { fatal: new Map(), warning: new Map() };
   }
 
-  logError(entry: string, errors: IErrorRef[]) {
-    console.info(`- ${red(entry)}`);
+  logError(entry: string, errors: IErrorRef[], type: 'fatal' | 'warning') {
+    console.info(`- ${cyan(entry)}`);
     for (const error of errors) {
       const title = [
-        error.line && yellow(`@${error.line}:${error.col}`),
+        error.line && `@${error.line}:${error.col}`,
         error.message,
       ].filter(Boolean).join(' ');
-      if (title) console.info(`  ${title}`);
+      if (title) console.info(`  ${(type === 'fatal' ? red : yellow)(title)}`);
       const content = error.content?.map(line => `  ${line}`).join('\n');
-      if (content) console.info(`\n${content}\n`);
+      if (content) console.info(content);
     }
   }
 
   async check() {
-    this.errors = {};
+    this.errors = { fatal: new Map(), warning: new Map() };
     await this.checkApp();
+    await this.checkUnused();
     let hasError = false;
-    console.info();
-    for (const [entry, errors] of Object.entries(this.errors)) {
-      hasError = true;
-      this.logError(entry, errors);
+    if (this.errors.warning.size) {
+      console.info();
+      console.info(yellow('Warnings:'));
+      for (let [entry, errors] of this.errors.warning) {
+        hasError = true;
+        this.logError(entry, errors, 'warning');
+      }
+    }
+    if (this.errors.fatal.size) {
+      console.info();
+      console.info(red('Fatal errors:'));
+      for (let [entry, errors] of this.errors.fatal) {
+        hasError = true;
+        this.logError(entry, errors, 'fatal');
+      }
     }
     if (!hasError) console.info('No error is found');
-    await this.checkUnused();
     await this.analyze();
   }
 
@@ -145,7 +159,7 @@ export class AppXScanner {
   }
 
   async checkUnused() {
-    const unused = new Set();
+    const unused = new Set<string>();
     for await (const entry of walk(this.root, { skip: [/\/node_modules\//] })) {
       const filepath = path.posix.relative(this.root, entry.path);
       if (filepath.endsWith('.axml')) {
@@ -156,9 +170,11 @@ export class AppXScanner {
       }
     }
     if (unused.size > 0) {
-      console.info(red(`${unused.size} extraneous components are found:`));
+      const title = `${unused.size} extraneous components are found`;
       for (const entry of unused) {
-        console.info(`  - ${entry}`);
+        this.addError(title, {
+          message: entry,
+        });
       }
     }
   }
@@ -192,11 +208,11 @@ export class AppXScanner {
     // await Deno.writeTextFile('appx-result.html', template.replace('{/* DATA */}', JSON.stringify({ nodes, links })));
   }
 
-  addError(entry: string, error: IErrorRef | IErrorRef[]) {
-    let list = this.errors[entry];
+  addError(entry: string, error: IErrorRef | IErrorRef[], type: 'fatal' | 'warning' = 'warning') {
+    let list = this.errors[type].get(entry);
     if (!list) {
       list = [];
-      this.errors[entry] = list;
+      this.errors[type].set(entry, list);
     }
     if (Array.isArray(error)) list.push(...error);
     else list.push(error);
@@ -219,7 +235,7 @@ export class AppXScanner {
       try {
         deps = await this.extractComponents(entry, defs.components);
       } catch (err) {
-        this.addError(entry, err.error);
+        this.addError(entry, err.error, 'fatal');
       }
       this.components.set(entry, {
         entry,
@@ -273,7 +289,7 @@ export class AppXScanner {
         await this.assertFile(`${modulePath}.json`);
         components.set(key, modulePath);
       } catch {
-        this.addError(entry, { message: `Component not found: ${key}` });
+        this.addError(entry, { message: `Component not found: ${key}` }, 'fatal');
       }
     }
     return { components };
