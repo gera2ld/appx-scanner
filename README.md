@@ -20,7 +20,7 @@
 然后执行：
 
 ```sh
-$ deno run --allow-read https://raw.githubusercontent.com/gera2ld/appx-scanner/master/main.ts project
+$ deno run --unstable -A https://raw.githubusercontent.com/gera2ld/appx-scanner/master/main.ts project
 ```
 
 注：`project` 是 `app.json` 所在的目录。

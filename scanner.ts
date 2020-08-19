@@ -22,6 +22,7 @@ const builtIns = [
   'movable-area',
   'movable-view',
   'navigator',
+  'page-meta',
   'picker',
   'picker-view',
   'picker-view-column',
@@ -105,11 +106,13 @@ export class AppXScanner {
     fatal: Map<string, IErrorRef[]>;
     warning: Map<string, IErrorRef[]>;
   };
+  pages: Set<string>;
 
   constructor(entry: string) {
     this.root = entry;
     this.components = new Map();
     this.errors = { fatal: new Map(), warning: new Map() };
+    this.pages = new Set();
   }
 
   logError(entry: string, errors: IErrorRef[], type: 'fatal' | 'warning') {
@@ -154,6 +157,7 @@ export class AppXScanner {
     const app = JSON.parse(await this.readFile('app.json'));
     const pages = app.pages as string[];
     for (const page of pages) {
+      this.pages.add(page);
       await this.checkComponent(page);
     }
   }
