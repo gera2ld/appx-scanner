@@ -219,6 +219,7 @@ export class AppXScanner {
   }
 
   async checkComponent(entry: string) {
+    if (this.components.has(entry)) return;
     let hasError = false;
     try {
       await this.assertFile(`${entry}.json`);
@@ -229,9 +230,14 @@ export class AppXScanner {
       this.addError(entry, { message: e.message });
       hasError = true;
     }
-    if (!hasError) {
+    let deps: IDependency[] = [];
+    if (hasError) {
+      this.components.set(entry, {
+        entry,
+        deps,
+      });
+    } else {
       const defs = await this.extractDefinitions(entry);
-      let deps;
       try {
         deps = await this.extractComponents(entry, defs.components);
       } catch (err) {
@@ -239,7 +245,7 @@ export class AppXScanner {
       }
       this.components.set(entry, {
         entry,
-        deps: deps || [],
+        deps,
         defs,
       });
       for (const [, modulePath] of defs.components) {
@@ -248,15 +254,10 @@ export class AppXScanner {
     }
   }
 
-  async stat(fullpath: string) {
-    const stat = await Deno.stat(fullpath);
-    return stat;
-  }
-
   async assertFile(entry: string) {
     let stat: Deno.FileInfo | undefined;
     try {
-      stat = await this.stat(`${this.root}/${entry}`);
+      stat = await Deno.stat(`${this.root}/${entry}`);
     } catch {
       // noop
     }
@@ -328,7 +329,7 @@ export class AppXScanner {
         component.modulePath = definitions.get(name);
         unused.delete(name);
       } else {
-        this.addError(entry, reprStr({ input: content, offset: (component.node.posOpen?.start ?? -1) + 1, message: `Undefined component: ${name}` }));
+        this.addError(entry, reprStr({ input: content, offset: (component.node.posOpen?.start ?? -1) + 1, message: `Undefined component: ${name}` }), 'fatal');
       }
     }
     for (const [name] of unused) {
