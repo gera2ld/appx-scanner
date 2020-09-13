@@ -1,5 +1,5 @@
 // @deno-types="https://unpkg.com/cac/mod.d.ts"
-import { cac } from 'https://unpkg.com/cac/mod.js'
+import { cac } from 'https://unpkg.com/cac/mod.js';
 import { AppXScanner } from './scanner.ts';
 
 const cli = cac('appx-scanner');

@@ -1,4 +1,4 @@
-import { walk } from 'https://deno.land/std/fs/mod.ts';
+import { walk, ensureDir } from 'https://deno.land/std/fs/mod.ts';
 import * as path from 'https://deno.land/std/path/mod.ts';
 import { cyan, red, yellow } from 'https://deno.land/std/fmt/colors.ts';
 import { parseXml, IError, traverse, INode } from 'https://raw.githubusercontent.com/gera2ld/xmlparse/master/mod.ts';
@@ -99,6 +99,13 @@ export function reprStr(error: IError): IErrorRef {
   };
 }
 
+function getEntryDesc(entry: string, defaultName: string) {
+  if (entry.endsWith(`/${defaultName}`)) entry = entry.slice(0, -defaultName.length - 1);
+  const external = entry.startsWith('node_modules/');
+  const name = external ? `<span class="external">${entry.slice(13)}</span>` : path.basename(entry);
+  return { name, external };
+}
+
 export class AppXScanner {
   root: string;
   components: Map<string, IComponent>;
@@ -109,7 +116,7 @@ export class AppXScanner {
   pages: Set<string>;
 
   constructor(entry: string) {
-    this.root = entry;
+    this.root = path.resolve(entry);
     this.components = new Map();
     this.errors = { fatal: new Map(), warning: new Map() };
     this.pages = new Set();
@@ -150,7 +157,8 @@ export class AppXScanner {
       }
     }
     if (!hasError) console.info('No error is found');
-    await this.analyze();
+    await this.generateHierarchy();
+    // await this.analyze();
   }
 
   async checkApp() {
@@ -207,9 +215,65 @@ export class AppXScanner {
         if (node) node.weight += 1;
       }
     }
-    // const nodes = Array.from(nodeMap.values());
-    // const template = await Deno.readTextFile('template.html');
-    // await Deno.writeTextFile('appx-result.html', template.replace('{/* DATA */}', JSON.stringify({ nodes, links })));
+    const nodes = Array.from(nodeMap.values());
+    await this.render('component-graph', { nodes, links });
+  }
+
+  async generateHierarchy() {
+    const rootNode: any = {
+      v: getEntryDesc(this.root, 'src').name,
+      c: [],
+      d: 0,
+    };
+    const cache = new Map();
+    const queue: { component: IComponent, node: any }[] = [];
+    let i = 0;
+    for (const page of this.pages) {
+      const component = this.components.get(page);
+      if (!component) continue;
+      i += 1;
+      const pageNode = {
+        v: getEntryDesc(component.entry, 'index').name,
+        c: [],
+        d: 1,
+        p: { pi: i },
+      };
+      queue.push({ component, node: pageNode });
+      rootNode.c.push(pageNode);
+    }
+    while (queue.length) {
+      const { component, node } = queue.shift()!;
+      component.deps?.forEach(({ modulePath }) => {
+        let childNode;
+        if (cache.has(modulePath)) {
+          childNode = cache.get(modulePath);
+        } else {
+          const child = this.components.get(modulePath!);
+          if (child) {
+            const desc = getEntryDesc(child.entry, 'index');
+            childNode = {
+              v: desc.name,
+              c: [],
+              d: node.d + 1,
+              p: {
+                pi: node.p.pi,
+                f: desc.external,
+              },
+            };
+            queue.push({ component: child, node: childNode });
+          }
+          // cache.set(modulePath, childNode);
+        }
+        if (childNode) node.c.push(childNode);
+      });
+    }
+    await this.render('component-hierarchy', rootNode);
+  }
+
+  async render(key: string, data: any) {
+    const template = await Deno.readTextFile(`templates/${key}.html`);
+    await ensureDir('output');
+    await Deno.writeTextFile(`output/${key}.html`, template.replace('{/* DATA */}', JSON.stringify(data)));
   }
 
   addError(entry: string, error: IErrorRef | IErrorRef[], type: 'fatal' | 'warning' = 'warning') {
