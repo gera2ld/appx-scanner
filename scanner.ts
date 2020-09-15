@@ -99,8 +99,8 @@ export function reprStr(error: IError): IErrorRef {
   };
 }
 
-function getEntryDesc(entry: string, defaultName: string) {
-  if (entry.endsWith(`/${defaultName}`)) entry = entry.slice(0, -defaultName.length - 1);
+function getEntryDesc(entry: string, strip: RegExp) {
+  entry = entry.replace(strip, '');
   const external = entry.startsWith('node_modules/');
   const name = external ? `<span class="external">${entry.slice(13)}</span>` : path.basename(entry);
   return { name, external };
@@ -221,7 +221,7 @@ export class AppXScanner {
 
   async generateHierarchy() {
     const rootNode: any = {
-      v: getEntryDesc(this.root, 'src').name,
+      v: getEntryDesc(this.root, /\/src$/).name,
       c: [],
       d: 0,
     };
@@ -233,7 +233,7 @@ export class AppXScanner {
       if (!component) continue;
       i += 1;
       const pageNode = {
-        v: getEntryDesc(component.entry, 'index').name,
+        v: getEntryDesc(component.entry, /\/index(?:\.mini)?$/).name,
         c: [],
         d: 1,
         p: { pi: i },
@@ -250,7 +250,7 @@ export class AppXScanner {
         } else {
           const child = this.components.get(modulePath!);
           if (child) {
-            const desc = getEntryDesc(child.entry, 'index');
+            const desc = getEntryDesc(child.entry, /\/index(?:\.mini)?$/);
             childNode = {
               v: desc.name,
               c: [],
