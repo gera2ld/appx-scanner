@@ -114,12 +114,16 @@ export class AppXScanner {
     warning: Map<string, IErrorRef[]>;
   };
   pages: Set<string>;
+  highlights?: Set<string>;
 
-  constructor(entry: string) {
+  constructor(entry: string, options: {
+    highlights?: Iterable<string>;
+  } = {}) {
     this.root = path.resolve(entry);
     this.components = new Map();
     this.errors = { fatal: new Map(), warning: new Map() };
     this.pages = new Set();
+    this.highlights = new Set(options.highlights ?? []);
   }
 
   logError(entry: string, errors: IErrorRef[], type: 'fatal' | 'warning') {
@@ -236,7 +240,10 @@ export class AppXScanner {
         v: getEntryDesc(component.entry, /\/index(?:\.mini)?$/).name,
         c: [],
         d: 1,
-        p: { pi: i },
+        p: {
+          pi: i,
+          c: this.highlights?.size ? '#999' : null,
+        },
       };
       queue.push({ component, node: pageNode });
       rootNode.c.push(pageNode);
@@ -258,6 +265,7 @@ export class AppXScanner {
               p: {
                 pi: node.p.pi,
                 f: desc.external,
+                c: this.highlights?.has(child.entry) ? null : node.p.c,
               },
             };
             queue.push({ component: child, node: childNode });

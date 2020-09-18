@@ -25,7 +25,7 @@
 <script>
 const data = {/* DATA */};
 markmap.Markmap.create('#mindmap', {
-  color: (colorFn => node => colorFn(node.p.pi))(d3.scaleOrdinal(d3.schemeCategory10)),
+  color: (colorFn => node => node.p.c || colorFn(node.p.pi))(d3.scaleOrdinal(d3.schemeCategory10)),
 }, data);
 </script>
 </body>
