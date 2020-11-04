@@ -14,14 +14,17 @@
 </head>
 <body>
 <script>
-let { nodes, links } = {/* DATA */};
+const { nodes, links } = {/* DATA */};
 let active;
-nodes = nodes.map(data => ({ data }));
-const maxWeight = d3.max(nodes, d => d.data.weight) || 1;
+const maxWeight = d3.max(nodes, d => d.weight) || 1;
 const linkSet = new Set(links.map(item => item.sort().join('<->')));
-links = links.map(([source, target]) => ({ source: nodes.find(({ data: { entry } }) => entry === source), target: nodes.find(({ data: { entry } }) => entry === target) }));
-const simulation = d3.forceSimulation(nodes)
-  .force('link', d3.forceLink(links).id(d => d.id).distance(300))
+const nodeData = nodes.map(data => ({ data }));
+const linkData = links.map(([source, target]) => ({
+  source: nodeData.find(({ data: { entry } }) => entry === source),
+  target: nodeData.find(({ data: { entry } }) => entry === target),
+})).filter(item => item.source && item.target);
+const simulation = d3.forceSimulation(nodeData)
+  .force('link', d3.forceLink(linkData).id(d => d.id).distance(300))
   .force('charge', d3.forceManyBody().strength(-100))
   .force('x', d3.forceX())
   .force('y', d3.forceY());
@@ -54,11 +57,11 @@ const svg = d3.create('svg');
 const link = svg.append('g')
   .attr('stroke', '#999')
   .selectAll('line')
-  .data(links)
+  .data(linkData)
   .join('line');
 const group = svg.append('g')
   .selectAll('g')
-  .data(nodes)
+  .data(nodeData)
   .join('g')
   .call(drag);
 const circle = group
