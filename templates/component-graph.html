@@ -10,7 +10,7 @@
   padding: 0;
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/d3@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@6"></script>
 </head>
 <body>
 <script>
@@ -21,50 +21,53 @@ const maxWeight = d3.max(nodes, d => d.data.weight) || 1;
 const linkSet = new Set(links.map(item => item.sort().join('<->')));
 links = links.map(([source, target]) => ({ source: nodes.find(({ data: { entry } }) => entry === source), target: nodes.find(({ data: { entry } }) => entry === target) }));
 const simulation = d3.forceSimulation(nodes)
-  .force("link", d3.forceLink(links).id(d => d.id).distance(300))
-  .force("charge", d3.forceManyBody().strength(-100))
-  .force("x", d3.forceX())
-  .force("y", d3.forceY());
-function dragstarted(d) {
-  if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+  .force('link', d3.forceLink(links).id(d => d.id).distance(300))
+  .force('charge', d3.forceManyBody().strength(-100))
+  .force('x', d3.forceX())
+  .force('y', d3.forceY());
+function dragstarted(e) {
+  if (!e.active) simulation.alphaTarget(0.3).restart();
+  const d = e.subject;
   d.fx = d.x;
   d.fy = d.y;
   active = d.data;
   render();
 }
-function dragged(d) {
-  d.fx = d3.event.x;
-  d.fy = d3.event.y;
+function dragged(e) {
+  const d = e.subject;
+  d.fx = e.x;
+  d.fy = e.y;
 }
-function dragended(d) {
-  if (!d3.event.active) simulation.alphaTarget(0);
+function dragended(e) {
+  if (!e.active) simulation.alphaTarget(0);
+  const d = e.subject;
   d.fx = null;
   d.fy = null;
 }
 const drag = d3.drag()
-  .on("start", dragstarted)
-  .on("drag", dragged)
-  .on("end", dragended);
+  .on('start', dragstarted)
+  .on('drag', dragged)
+  .on('end', dragended);
 const scale = d3.scaleOrdinal(d3.schemeCategory10);
 const color = d => scale(d.data.entry.split('/').slice(0, 2).join('/'));
-const svg = d3.create("svg");
-const link = svg.append("g")
-  .attr("stroke", "#999")
-  .selectAll("line")
+const svg = d3.create('svg');
+const link = svg.append('g')
+  .attr('stroke', '#999')
+  .selectAll('line')
   .data(links)
-  .join("line");
-const group = svg.append("g")
-  .selectAll("g")
+  .join('line');
+const group = svg.append('g')
+  .selectAll('g')
   .data(nodes)
-  .join("g")
+  .join('g')
   .call(drag);
 const circle = group
   .selectAll('circle')
   .data(d => [d])
   .join('circle')
-  .attr("fill", color)
-  .attr("stroke", "#fff")
-  .attr("r", d => 5 + 5 * (d.data.weight / maxWeight));
+  .attr('fill', color)
+  .attr('stroke', '#fff')
+  .attr('r', d => 5 + 5 * (d.data.weight / maxWeight));
 const text = group
   .selectAll('text')
   .data(d => [d])
@@ -72,20 +75,20 @@ const text = group
   .attr('fill', '#333')
   .attr('x', 10)
   .text(d => d.data.name);
-simulation.on("tick", () => {
+simulation.on('tick', () => {
   link
-    .attr("x1", d => d.source.x)
-    .attr("y1", d => d.source.y)
-    .attr("x2", d => d.target.x)
-    .attr("y2", d => d.target.y);
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x)
+    .attr('y2', d => d.target.y);
   group
-    .attr("transform", d => `translate(${d.x},${d.y})`);
+    .attr('transform', d => `translate(${d.x},${d.y})`);
 });
 
 function onResize() {
   const width = innerWidth;
   const height = innerHeight;
-  svg.attr("viewBox", [-width / 2, -height / 2, width, height]);
+  svg.attr('viewBox', [-width / 2, -height / 2, width, height]);
 }
 
 function getStatus(data) {
