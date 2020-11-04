@@ -28,22 +28,19 @@ const simulation = d3.forceSimulation(nodeData)
   .force('charge', d3.forceManyBody().strength(-100))
   .force('x', d3.forceX())
   .force('y', d3.forceY());
-function dragstarted(e) {
+function dragstarted(e, d) {
   if (!e.active) simulation.alphaTarget(0.3).restart();
-  const d = e.subject;
   d.fx = d.x;
   d.fy = d.y;
   active = d.data;
   render();
 }
-function dragged(e) {
-  const d = e.subject;
+function dragged(e, d) {
   d.fx = e.x;
   d.fy = e.y;
 }
-function dragended(e) {
+function dragended(e, d) {
   if (!e.active) simulation.alphaTarget(0);
-  const d = e.subject;
   d.fx = null;
   d.fy = null;
 }
